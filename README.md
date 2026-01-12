@@ -1,4 +1,3 @@
-# teste-std
 ## Santander Challenge ##
 
 *O Objetivo deste Challenge é validar uma topologia baseada cloud em componentes 3 camadas*
