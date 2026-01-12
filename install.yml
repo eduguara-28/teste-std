@@ -1,0 +1,269 @@
+
+---
+- name: Install Nginx, Redis, Kafka, and PostgreSQL
+  hosts: all
+  become: true
+
+  vars:
+    # ===== General settings =====
+    app_user: "appsvc"
+    app_group: "appsvc"
+    app_home: "/opt"
+    # Create a dedicated directory for Kafka
+    kafka_dir: "{{ app_home }}/kafka"
+    kafka_version: "3.7.0"
+    scala_version: "2.13"
+    kafka_tgz_url: "https://downloads.apache.org/kafka/{{ kafka_version }}/kafka_{{ scala_version }}-{{ kafka_version }}.tgz"
+    kafka_tgz_checksum: ""  # optional: sha512 for integrity
+    kafka_data_dir: "/var/lib/kafka"
+    kafka_log_dir: "/var/log/kafka"
+
+    # PostgreSQL version (APT default repo handles version)
+    postgres_packages:
+      - postgresql
+      - postgresql-contrib
+
+    # Redis / Nginx packages (from distro repos)
+    nginx_packages:
+      - nginx
+    redis_packages:
+      - redis-server
+
+    # Network config examples
+    nginx_listen_port: 80
+    redis_bind: "127.0.0.1"
+    redis_port: 6379
+    postgres_listen_addresses: "localhost"
+    postgres_port: 5432
+
+  pre_tasks:
+    - name: Ensure APT cache is up to date
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: Create service account for applications
+      ansible.builtin.user:
+        name: "{{ app_user }}"
+        group: "{{ app_group }}"
+        create_home: false
+        shell: /usr/sbin/nologin
+        system: true
+      register: app_user_result
+
+    - name: Ensure group exists for applications
+      ansible.builtin.group:
+        name: "{{ app_group }}"
+        system: true
+
+  tasks:
+    # ===== Nginx =====
+    - name: Install Nginx
+      ansible.builtin.package:
+        name: "{{ nginx_packages }}"
+        state: present
+
+    - name: Ensure Nginx service is enabled and started
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Deploy basic Nginx site (optional)
+      ansible.builtin.copy:
+        dest: /etc/nginx/sites-available/default
+        content: |
+          server {
+              listen {{ nginx_listen_port }} default_server;
+              listen [::]:{{ nginx_listen_port }} default_server;
+
+              server_name _;
+              root /var/www/html;
+
+              location / {
+                  try_files $uri $uri/ =404;
+              }
+          }
+        mode: "0644"
+      notify: restart-nginx
+
+    # ===== Redis =====
+    - name: Install Redis
+      ansible.builtin.package:
+        name: "{{ redis_packages }}"
+        state: present
+
+    - name: Configure Redis minimal settings
+      ansible.builtin.lineinfile:
+        path: /etc/redis/redis.conf
+        regexp: '^bind '
+        line: "bind {{ redis_bind }}"
+        backup: true
+
+    - name: Set Redis port
+      ansible.builtin.lineinfile:
+        path: /etc/redis/redis.conf
+        regexp: '^port '
+        line: "port {{ redis_port }}"
+        backup: true
+      notify: restart-redis
+
+    - name: Ensure Redis enabled and started
+      ansible.builtin.service:
+        name: redis-server
+        state: started
+        enabled: true
+
+    # ===== PostgreSQL =====
+    - name: Install PostgreSQL packages
+      ansible.builtin.package:
+        name: "{{ postgres_packages }}"
+        state: present
+
+    - name: Ensure PostgreSQL service enabled and started
+      ansible.builtin.service:
+        name: postgresql
+        state: started
+        enabled: true
+
+    - name: Configure PostgreSQL listen addresses
+      ansible.builtin.lineinfile:
+        path: "/etc/postgresql/*/main/postgresql.conf"
+        regexp: '^#?listen_addresses\s*='
+        line: "listen_addresses = '{{ postgres_listen_addresses }}'"
+        backup: true
+      notify: restart-postgresql
+
+    - name: Configure PostgreSQL port
+      ansible.builtin.lineinfile:
+        path: "/etc/postgresql/*/main/postgresql.conf"
+        regexp: '^#?port\s*='
+        line: "port = {{ postgres_port }}"
+        backup: true
+      notify: restart-postgresql
+
+    # ===== Kafka (Apache Kafka tarball install) =====
+    - name: Install dependencies for Kafka (Java, tar)
+      ansible.builtin.package:
+        name:
+          - default-jre
+          - tar
+          - curl
+        state: present
+
+    - name: Create Kafka directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: "0755"
+      loop:
+        - "{{ kafka_dir }}"
+        - "{{ kafka_data_dir }}"
+        - "{{ kafka_log_dir }}"
+
+    - name: Download Kafka tarball
+      ansible.builtin.get_url:
+        url: "{{ kafka_tgz_url }}"
+        dest: "/tmp/kafka_{{ scala_version }}-{{ kafka_version }}.tgz"
+        mode: "0644"
+        checksum: "{{ kafka_tgz_checksum | default(omit) }}"
+
+    - name: Extract Kafka
+      ansible.builtin.unarchive:
+        src: "/tmp/kafka_{{ scala_version }}-{{ kafka_version }}.tgz"
+        dest: "{{ kafka_dir }}"
+        remote_src: true
+        creates: "{{ kafka_dir }}/kafka_{{ scala_version }}-{{ kafka_version }}"
+
+    - name: Create symlink for current Kafka
+      ansible.builtin.file:
+        src: "{{ kafka_dir }}/kafka_{{ scala_version }}-{{ kafka_version }}"
+        dest: "{{ kafka_dir }}/current"
+        state: link
+
+    - name: Configure Kafka server.properties
+      ansible.builtin.copy:
+        dest: "{{ kafka_dir }}/current/config/server.properties"
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: "0644"
+        content: |
+          broker.id=0
+          listeners=PLAINTEXT://:9092
+          log.dirs={{ kafka_data_dir }}
+          num.network.threads=3
+          num.io.threads=8
+          socket.send.buffer.bytes=102400
+          socket.receive.buffer.bytes=102400
+          socket.request.max.bytes=104857600
+          log.retention.hours=168
+          zookeeper.connect=localhost:2181
+          # For Kafka 3.x using KRaft mode, you'd replace zookeeper settings with:
+          # process.roles=broker,controller
+          # node.id=1
+          # controller.quorum.voters=1@localhost:9093
+          # controller.listener.names=CONTROLLER
+          # listeners=PLAINTEXT://:9092,CONTROLLER://:9093
+      notify: restart-kafka
+
+    - name: Create systemd unit for Kafka
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/kafka.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Apache Kafka Service
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ app_user }}
+          Group={{ app_group }}
+          Environment="KAFKA_HEAP_OPTS=-Xmx512M -Xms512M"
+          ExecStart={{ kafka_dir }}/current/bin/kafka-server-start.sh {{ kafka_dir }}/current/config/server.properties
+          ExecStop={{ kafka_dir }}/current/bin/kafka-server-stop.sh
+          Restart=on-failure
+          RestartSec=10
+          StandardOutput=syslog
+          StandardError=syslog
+          SyslogIdentifier=kafka
+
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+        - daemon-reload
+        - restart-kafka
+
+    - name: Ensure Kafka enabled and started
+      ansible.builtin.systemd:
+        name: kafka
+        state: started
+        enabled: true
+
+  handlers:
+    - name: restart-nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+
+    - name: restart-redis
+      ansible.builtin.service:
+        name: redis-server
+        state: restarted
+
+    - name: restart-postgresql
+      ansible.builtin.service:
+        name: postgresql
+        state: restarted
+
+    - name: daemon-reload
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: restart-kafka
+      ansible.builtin.systemd:
+        name: kafka
+        state: restarted
