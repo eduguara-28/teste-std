@@ -32,9 +32,14 @@ Foi colocado a entrada dos dados via API em alta disponibidade e os demais servi
  [documentação referencia](https://docs.ansible.com/projects/ansible/latest/dev_guide/developing_collections_structure.html)
  
 ├── playbooks/
+
 │   ├── files/
+
 │   ├── vars/
+
 │   ├── templates/
+
 │   └── tasks/
+
 
 Um ultimo detalhe porem não menos importante é ter um inventário, um destino correto onde este script será executado, assim, evitando uma execução erronea ou mesmo problemas de deploy em equipamentos que não fazem parte do escopo.
