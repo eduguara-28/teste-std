@@ -9,7 +9,7 @@
    - Load Blance
    - Ngix - Web Server/API Gateway
    
-3. Camada - Damada de Serviço
+3. Camada de Serviço
     - Serviço de Gerenciamento de Fila - Kafka MQ
    
 4. Camada de Cache / Armazenamento
