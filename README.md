@@ -4,9 +4,9 @@
 
 1. Camada - Entrada
    - Componentes:
-     | WAF - Proteção dos dados (Web Application Firewall)
-     | Load Blance
-     |  Ngix - Web Server/API Gateway
+     - WAF - Proteção dos dados (Web Application Firewall)
+     - Load Blance
+     -  Ngix - Web Server/API Gateway
    
 3. Camada de Serviço
     - Serviço de Gerenciamento de Fila - Kafka MQ
