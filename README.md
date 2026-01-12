@@ -5,15 +5,15 @@
 
 1. Camada - Entrada
    - Componentes
-        WAF - Proteção dos dados (Web Application Firewall)
-        Load Blance
-        Ngix - Web Server/API Gateway
+   - WAF - Proteção dos dados (Web Application Firewall)
+   - Load Blance
+   - Ngix - Web Server/API Gateway
    
 3. Camada - Damada de Serviço
     - Serviço de Gerenciamento de Fila - Kafka MQ
    
 4. Camada de Cache / Armazenamento
     - Componente
-        Redis - Cache
-         Banco de dados - PostGres
+    - Redis - Cache
+    - Banco de dados - PostGres
    
