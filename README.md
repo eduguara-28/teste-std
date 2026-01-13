@@ -22,7 +22,7 @@ Conceito desta topolgia foi criar uma topologia em três camadas, onde cada cama
 Foi colocado a entrada dos dados via API em alta disponibidade e os demais serviços sem a mesma caracteristica.
 
 
-[Para o HLD Acesse](https://drive.google.com/file/d/1WbQtBnFG3fHTw6z822RRP2L9axZZKo8c/view?usp=drive_link)
+[Para o HLD Acesse](https://github.com/eduguara-28/teste-std/blob/main/Santander-HLD.drawio)
 
 
 --------------------------
